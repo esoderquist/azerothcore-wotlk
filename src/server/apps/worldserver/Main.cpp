@@ -588,6 +588,7 @@ void WorldUpdateLoop()
     {
         ++World::m_worldLoopCounter;
         realCurrTime = getMSTime();
+        uint32 currOnline = sWorld->GetActiveSessionCount();
 
         uint32 diff = getMSTimeDiff(realPrevTime, realCurrTime);
         if (diff < minUpdateDiff)
@@ -596,7 +597,7 @@ void WorldUpdateLoop()
             if (sleepTime >= halfMaxCoreStuckTime)
                 LOG_ERROR("server.worldserver", "WorldUpdateLoop() waiting for {} ms with MaxCoreStuckTime set to {} ms", sleepTime, maxCoreStuckTime);
             // sleep until enough time passes that we can update all timers
-            std::this_thread::sleep_for(Milliseconds(sleepTime));
+            std::this_thread::sleep_for(Milliseconds(currOnline == 0 ? sleepTime * 100000 : sleepTime));
             continue;
         }
 
