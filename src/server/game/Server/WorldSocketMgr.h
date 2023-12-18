@@ -24,6 +24,7 @@
 #define __WORLDSOCKETMGR_H
 
 #include "SocketMgr.h"
+#include "Subject.h"
 
 class WorldSocket;
 
@@ -43,7 +44,15 @@ public:
 
     void OnSocketOpen(tcp::socket&& sock, uint32 threadIndex) override;
 
+    int32 NumSocketsConnected = 0;
+
     std::size_t GetApplicationSendBufferSize() const { return _socketApplicationSendBufferSize; }
+    Subject<int32> *GetNumSocketsConnectedSubject() const { return numSocketsConnectedSubject; }
+    Observer<int32> *GetNumSocketsConnectedObserver() const {
+        Observer<int32> *obs = new Observer<int32>();
+        numSocketsConnectedSubject->Attach(obs);
+        return obs;
+    }
 
 protected:
     WorldSocketMgr();
@@ -56,6 +65,7 @@ protected:
     }
 
 private:
+    Subject<int32> *numSocketsConnectedSubject = new Subject<int32>;
     int32 _socketSystemSendBufferSize;
     int32 _socketApplicationSendBufferSize;
     bool _tcpNoDelay;

@@ -27,12 +27,14 @@ class WorldSocketThread : public NetworkThread<WorldSocket>
 public:
     void SocketAdded(std::shared_ptr<WorldSocket> sock) override
     {
+        sWorldSocketMgr.GetNumSocketsConnectedSubject()->Notify(++sWorldSocketMgr.NumSocketsConnected);
         sock->SetSendBufferSize(sWorldSocketMgr.GetApplicationSendBufferSize());
         sScriptMgr->OnSocketOpen(sock);
     }
 
     void SocketRemoved(std::shared_ptr<WorldSocket> sock) override
     {
+        sWorldSocketMgr.GetNumSocketsConnectedSubject()->Notify(--sWorldSocketMgr.NumSocketsConnected);
         sScriptMgr->OnSocketClose(sock);
     }
 };
