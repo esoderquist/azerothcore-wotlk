@@ -37,7 +37,14 @@ ObjectData const creatureData[] =
     { NPC_LEOTHERAS_THE_BLIND,    DATA_LEOTHERAS_THE_BLIND    },
     { NPC_FATHOM_LORD_KARATHRESS, DATA_FATHOM_LORD_KARATHRESS },
     { NPC_LADY_VASHJ,             DATA_LADY_VASHJ             },
+    { NPC_SEER_OLUM,              DATA_SEER_OLUM              },
     { 0,                          0                           }
+};
+
+ObjectData const gameObjectData[] =
+{
+    { GO_STRANGE_POOL, DATA_STRANGE_POOL },
+    { 0,               0                 }
 };
 
 MinionData const minionData[] =
@@ -69,7 +76,7 @@ public:
             SetHeaders(DataHeader);
             SetBossNumber(MAX_ENCOUNTERS);
             LoadDoorData(doorData);
-            LoadObjectData(creatureData, nullptr);
+            LoadObjectData(creatureData, gameObjectData);
             LoadMinionData(minionData);
             LoadBossBoundaries(boundaries);
 
@@ -122,6 +129,10 @@ public:
                 case NPC_TAINTED_ELEMENTAL:
                     if (Creature* vashj = GetCreature(DATA_LADY_VASHJ))
                         vashj->AI()->JustSummoned(creature);
+                    break;
+                case NPC_SEER_OLUM:
+                    creature->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+                    creature->RemoveNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
                     break;
                 default:
                     break;
