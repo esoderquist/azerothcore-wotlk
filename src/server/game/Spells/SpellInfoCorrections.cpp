@@ -126,7 +126,6 @@ void SpellMgr::LoadSpellInfoCorrections()
 
     ApplySpellFix({
         63665,  // Charge (Argent Tournament emote on riders)
-        31298,  // Sleep (needs target selection script)
         2895,   // Wrath of Air Totem rank 1 (Aura)
         68933,  // Wrath of Air Totem rank 2 (Aura)
         29200   // Purify Helboar Meat
@@ -4796,6 +4795,13 @@ void SpellMgr::LoadSpellInfoCorrections()
     ApplySpellFix({ 37135 }, [](SpellInfo* spellInfo)
     {
         spellInfo->MaxAffectedTargets = 5;
+    });
+
+    // Presence Of Mind
+    ApplySpellFix({ 12043 }, [](SpellInfo* spellInfo)
+    {
+        // It should not share cooldown mods with category[1151] spells (Arcane Power [12042], Decimate [47271])
+        spellInfo->AttributesEx6 |= SPELL_ATTR6_NO_CATEGORY_COOLDOWN_MODS;
     });
 
     for (uint32 i = 0; i < GetSpellInfoStoreSize(); ++i)
