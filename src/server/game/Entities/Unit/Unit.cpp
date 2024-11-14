@@ -1062,7 +1062,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
             {
                 if (spellProto && victim->CanHaveThreatList() && !victim->HasUnitState(UNIT_STATE_EVADE) && !victim->IsInCombatWith(attacker))
                 {
-                    victim->CombatStart(attacker, !(spellProto->AttributesEx3 & SPELL_ATTR3_SUPRESS_TARGET_PROCS));
+                    victim->CombatStart(attacker, !(spellProto->AttributesEx3 & SPELL_ATTR3_SUPPRESS_TARGET_PROCS));
                 }
 
                 victim->AddThreat(attacker, float(damage), damageSchoolMask, spellProto);
@@ -1891,6 +1891,23 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
         // Call default DealDamage
         CleanDamage cleanDamage(damageInfo->cleanDamage, damageInfo->damages[i].absorb, damageInfo->attackType, damageInfo->hitOutCome);
         Unit::DealDamage(this, victim, damageInfo->damages[i].damage, &cleanDamage, DIRECT_DAMAGE, SpellSchoolMask(damageInfo->damages[i].damageSchoolMask), nullptr, durabilityLoss);
+    }
+
+    // gain rage if attack is fully blocked, dodged or parried
+    if (HasActivePowerType(POWER_RAGE) && (damageInfo->TargetState == VICTIMSTATE_BLOCKS || damageInfo->TargetState == VICTIMSTATE_DODGE || damageInfo->TargetState == VICTIMSTATE_PARRY))
+    {
+        switch (damageInfo->attackType)
+        {
+            case BASE_ATTACK:
+            case OFF_ATTACK:
+            {
+                uint32 weaponSpeedHitFactor = uint32(GetAttackTime(damageInfo->attackType) / 1000.0f * (damageInfo->attackType == BASE_ATTACK ? 3.5f : 1.75f));
+                RewardRage(damageInfo->cleanDamage, weaponSpeedHitFactor, true);
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     // If this is a creature and it attacks from behind it has a probability to daze it's victim
@@ -4059,9 +4076,11 @@ void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool wi
 
         if (spell->getState() != SPELL_STATE_FINISHED)
             spell->cancel(bySelf);
-
-        m_currentSpells[spellType] = nullptr;
-        spell->SetReferencedFromCurrent(false);
+        else
+        {
+            m_currentSpells[spellType] = nullptr;
+            spell->SetReferencedFromCurrent(false);
+        }
     }
 }
 
@@ -5076,10 +5095,13 @@ void Unit::RemoveAurasDueToItemSpell(uint32 spellId, ObjectGuid castItemGuid)
             ++iter;
     }
 
-    for (AuraMap::iterator iter = m_ownedAuras.begin(); iter != m_ownedAuras.end();)
+    for (AuraMap::iterator iter = m_ownedAuras.lower_bound(spellId); iter != m_ownedAuras.upper_bound(spellId);)
     {
         if (iter->second->GetCastItemGUID() == castItemGuid)
-                RemoveOwnedAura(iter, AURA_REMOVE_BY_DEFAULT);
+        {
+            RemoveOwnedAura(iter, AURA_REMOVE_BY_DEFAULT);
+            iter = m_ownedAuras.lower_bound(spellId);
+        }
         else
             ++iter;
     }
@@ -7750,7 +7772,12 @@ bool Unit::HandleDummyAuraProc(Unit* victim, uint32 damage, AuraEffect* triggere
                         {
                             if (!victim || !victim->IsAlive() || victim->HasSpellCooldown(20267))
                                 return false;
-                            // 2% of base mana
+
+                            auto* caster = triggeredByAura->GetBase()->GetCaster();
+                            if (!caster || !victim->IsFriendlyTo(caster))
+                                return false;
+
+                            // 2% of base health
                             basepoints0 = int32(victim->CountPctFromMaxHealth(2));
                             victim->CastCustomSpell(victim, 20267, &basepoints0, 0, 0, true, 0, triggeredByAura);
                             victim->AddSpellCooldown(20267, 0, 4 * IN_MILLISECONDS);
@@ -7760,6 +7787,10 @@ bool Unit::HandleDummyAuraProc(Unit* victim, uint32 damage, AuraEffect* triggere
                     case 20186:
                         {
                             if (!victim || !victim->IsAlive() || !victim->HasActivePowerType(POWER_MANA) || victim->HasSpellCooldown(20268))
+                                return false;
+
+                            auto* caster = triggeredByAura->GetBase()->GetCaster();
+                            if (!caster || !victim->IsFriendlyTo(caster))
                                 return false;
 
                             // 2% of base mana
@@ -8970,9 +9001,9 @@ bool Unit::HandleProcTriggerSpell(Unit* victim, uint32 damage, AuraEffect* trigg
                             if (GetStat(STAT_AGILITY)  > stat) { trigger_spell_id = 67772;                               }
                             break;
                         }
-                    // Mana Drain Trigger
-                    case 27522:
-                    case 40336:
+                    case 27522: // Mana Drain Trigger
+                    case 40336: // Mana Drain Trigger
+                    case 46939: // Black Bow of the Betrayer
                         {
                             // On successful melee or ranged attack gain $29471s1 mana and if possible drain $27526s1 mana from the target.
                             if (IsAlive())
@@ -19739,6 +19770,8 @@ void Unit::_ExitVehicle(Position const* exitPosition)
     if (!m_vehicle)
         return;
 
+    // This should be done before dismiss, because there may be some aura removal
+    VehicleSeatAddon const* seatAddon = m_vehicle->GetSeatAddonForSeatOfPassenger(this);
     m_vehicle->RemovePassenger(this);
 
     Player* player = ToPlayer();
@@ -19747,7 +19780,6 @@ void Unit::_ExitVehicle(Position const* exitPosition)
     if (player && player->duel && player->duel->IsMounted)
         player->DuelComplete(DUEL_FLED);
 
-    // This should be done before dismiss, because there may be some aura removal
     Vehicle* vehicle = m_vehicle;
     Unit* vehicleBase = m_vehicle->GetBase();
     m_vehicle = nullptr;
@@ -19758,33 +19790,22 @@ void Unit::_ExitVehicle(Position const* exitPosition)
     SetControlled(false, UNIT_STATE_ROOT);      // SMSG_MOVE_FORCE_UNROOT, ~MOVEMENTFLAG_ROOT
 
     Position pos;
-    if (!exitPosition)                          // Exit position not specified
-        pos = vehicleBase->GetPosition();  // This should use passenger's current position, leaving it as it is now
-    // because we calculate positions incorrect (sometimes under map)
-    else
+    // If we ask for a specific exit position, use that one. Otherwise allow scripts to modify it
+    if (exitPosition)
         pos = *exitPosition;
-
-    // HACK
-    VehicleEntry const* vehicleInfo = vehicle->GetVehicleInfo();
-    if (vehicleInfo)
+    else
     {
-        if (vehicleInfo->m_ID == 380) // Kologarn right arm
+        // Set exit position to vehicle position and use the current orientation
+        pos = vehicleBase->GetPosition();  // This should use passenger's current position, leaving it as it is now
+        pos.SetOrientation(vehicleBase->GetOrientation());
+
+        // Change exit position based on seat entry addon data
+        if (seatAddon)
         {
-            pos.Relocate(1776.0f, -24.0f, 448.75f, 0.0f);
-        }
-        else if (vehicleInfo->m_ID == 91) // Helsman's Ship
-        {
-            pos.Relocate(2802.18f, 7054.91f, -0.6f, 4.67f);
-        }
-        else if (vehicleInfo->m_ID == 349) // AT Mounts, dismount to the right
-        {
-            float x = pos.GetPositionX() + 2.0f * cos(pos.GetOrientation() - M_PI / 2.0f);
-            float y = pos.GetPositionY() + 2.0f * std::sin(pos.GetOrientation() - M_PI / 2.0f);
-            float z = GetMapHeight(x, y, pos.GetPositionZ());
-            if (z > INVALID_HEIGHT)
-            {
-                pos.Relocate(x, y, z);
-            }
+            if (seatAddon->ExitParameter == VehicleExitParameters::VehicleExitParamOffset)
+                pos.RelocateOffset({ seatAddon->ExitParameterX, seatAddon->ExitParameterY, seatAddon->ExitParameterZ, seatAddon->ExitParameterO });
+            else if (seatAddon->ExitParameter == VehicleExitParameters::VehicleExitParamDest)
+                pos.Relocate({ seatAddon->ExitParameterX, seatAddon->ExitParameterY, seatAddon->ExitParameterZ, seatAddon->ExitParameterO });
         }
     }
 
@@ -19804,11 +19825,12 @@ void Unit::_ExitVehicle(Position const* exitPosition)
     }
 
     // xinef: hack for flameleviathan seat vehicle
+    VehicleEntry const* vehicleInfo = vehicle->GetVehicleInfo();
     if (!vehicleInfo || vehicleInfo->m_ID != 341)
     {
         Movement::MoveSplineInit init(this);
         init.MoveTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
-        init.SetFacing(GetOrientation());
+        init.SetFacing(vehicleBase->GetOrientation());
         init.SetTransportExit();
         init.Launch();
     }
@@ -19861,10 +19883,7 @@ void Unit::_ExitVehicle(Position const* exitPosition)
             setDeathState(DeathState::JustDied);
         // If for other reason we as minion are exiting the vehicle (ejected, master dismounted) - unsummon
         else
-        {
-            SetVisible(false);
             ToTempSummon()->UnSummon(2000); // Approximation
-        }
     }
 
     if (player)
@@ -20112,6 +20131,7 @@ void Unit::SendRemoveFromThreatListOpcode(HostileReference* pHostileReference)
 
 void Unit::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
 {
+    // Rage formulae https://wowwiki-archive.fandom.com/wiki/Rage#Formulae
     float addRage;
 
     float rageconversion = ((0.0091107836f * GetLevel() * GetLevel()) + 3.225598133f * GetLevel()) + 4.2652911f;
@@ -20122,9 +20142,10 @@ void Unit::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
 
     if (attacker)
     {
-        addRage = (damage / rageconversion * 7.5f + weaponSpeedHitFactor) / 2;
-
-        // talent who gave more rage on attack
+        // see Bornak's bluepost explanation (05/29/2009)
+        float rageFromDamageDealt = damage / rageconversion * 7.5f;
+        addRage = (rageFromDamageDealt + weaponSpeedHitFactor) / 2.0f;
+        addRage = std::min(addRage, rageFromDamageDealt * 2.0f);
         AddPct(addRage, GetTotalAuraModifier(SPELL_AURA_MOD_RAGE_FROM_DAMAGE_DEALT));
     }
     else
