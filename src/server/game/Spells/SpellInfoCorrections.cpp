@@ -4856,6 +4856,18 @@ void SpellMgr::LoadSpellInfoCorrections()
         spellInfo->AuraInterruptFlags &= ~(AURA_INTERRUPT_FLAG_CHANGE_MAP | AURA_INTERRUPT_FLAG_TELEPORTED);
     });
 
+    // Summon Cyclone
+    ApplySpellFix({ 43112 }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->RequiresSpellFocus = 0;
+    });
+
+    // Booming Voice
+    ApplySpellFix({ 40080 }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->Effects[EFFECT_0].RealPointsPerLevel = 0;
+    });
+
     for (uint32 i = 0; i < GetSpellInfoStoreSize(); ++i)
     {
         SpellInfo* spellInfo = mSpellInfoMap[i];
