@@ -73,6 +73,7 @@
 #include "PoolMgr.h"
 #include "Realm.h"
 #include "ScriptMgr.h"
+#include "ServerMailMgr.h"
 #include "SkillDiscovery.h"
 #include "SkillExtraItems.h"
 #include "SmartAI.h"
@@ -90,10 +91,12 @@
 #include "WaypointMovementGenerator.h"
 #include "WeatherMgr.h"
 #include "WhoListCacheMgr.h"
+#include "WorldGlobals.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "WorldState.h"
+#include "WorldStateDefines.h"
 #include <boost/asio/ip/address.hpp>
 #include <cmath>
 
@@ -171,10 +174,10 @@ void World::LoadConfigSettings(bool reload)
             LOG_ERROR("server.loading", "World settings reload fail: can't read settings.");
             return;
         }
-    }
 
-    sLog->LoadFromConfig();
-    sMetric->LoadFromConfigs();
+        sLog->LoadFromConfig();
+        sMetric->LoadFromConfigs();
+    }
 
     // Set realm id and enable db logging
     sLog->SetRealmId(realm.Id.Realm);
@@ -926,6 +929,12 @@ void World::LoadConfigSettings(bool reload)
         _int_configs[CONFIG_BATTLEGROUND_SPEED_BUFF_RESPAWN] = 150;
     }
 
+    _int_configs[CONFIG_BATTLEGROUND_WARSONG_FLAGS]                        = sConfigMgr->GetOption<uint32>("Battleground.Warsong.Flags", 3);
+    _int_configs[CONFIG_BATTLEGROUND_ARATHI_CAPTUREPOINTS]                 = sConfigMgr->GetOption<uint32>("Battleground.Arathi.CapturePoints", 1600);
+    _int_configs[CONFIG_BATTLEGROUND_ALTERAC_REINFORCEMENTS]               = sConfigMgr->GetOption<uint32>("Battleground.Alterac.Reinforcements", 600);
+    _int_configs[CONFIG_BATTLEGROUND_ALTERAC_REP_ONBOSSDEATH]              = sConfigMgr->GetOption<uint32>("Battleground.Alterac.ReputationOnBossDeath", 350);
+    _int_configs[CONFIG_BATTLEGROUND_EYEOFTHESTORM_CAPTUREPOINTS]          = sConfigMgr->GetOption<uint32>("Battleground.EyeOfTheStorm.CapturePoints", 1600);
+
     _int_configs[CONFIG_ARENA_MAX_RATING_DIFFERENCE]                = sConfigMgr->GetOption<uint32>("Arena.MaxRatingDifference", 150);
     _int_configs[CONFIG_ARENA_RATING_DISCARD_TIMER]                 = sConfigMgr->GetOption<uint32>("Arena.RatingDiscardTimer", 10 * MINUTE * IN_MILLISECONDS);
     _int_configs[CONFIG_ARENA_PREV_OPPONENTS_DISCARD_TIMER]         = sConfigMgr->GetOption<uint32>("Arena.PreviousOpponentsDiscardTimer", 2 * MINUTE * IN_MILLISECONDS);
@@ -1159,9 +1168,9 @@ void World::LoadConfigSettings(bool reload)
 
     // Wintergrasp
     _int_configs[CONFIG_WINTERGRASP_ENABLE]              = sConfigMgr->GetOption<int32>("Wintergrasp.Enable", 1);
-    _int_configs[CONFIG_WINTERGRASP_PLR_MAX]             = sConfigMgr->GetOption<int32>("Wintergrasp.PlayerMax", 100);
+    _int_configs[CONFIG_WINTERGRASP_PLR_MAX]             = sConfigMgr->GetOption<int32>("Wintergrasp.PlayerMax", 120);
     _int_configs[CONFIG_WINTERGRASP_PLR_MIN]             = sConfigMgr->GetOption<int32>("Wintergrasp.PlayerMin", 0);
-    _int_configs[CONFIG_WINTERGRASP_PLR_MIN_LVL]         = sConfigMgr->GetOption<int32>("Wintergrasp.PlayerMinLvl", 77);
+    _int_configs[CONFIG_WINTERGRASP_PLR_MIN_LVL]         = sConfigMgr->GetOption<int32>("Wintergrasp.PlayerMinLvl", 75);
     _int_configs[CONFIG_WINTERGRASP_BATTLETIME]          = sConfigMgr->GetOption<int32>("Wintergrasp.BattleTimer", 30);
     _int_configs[CONFIG_WINTERGRASP_NOBATTLETIME]        = sConfigMgr->GetOption<int32>("Wintergrasp.NoBattleTimer", 150);
     _int_configs[CONFIG_WINTERGRASP_RESTART_AFTER_CRASH] = sConfigMgr->GetOption<int32>("Wintergrasp.CrashRestartTimer", 10);
@@ -1196,7 +1205,6 @@ void World::LoadConfigSettings(bool reload)
     _bool_configs[CONFIG_SET_ALL_CREATURES_WITH_WAYPOINT_MOVEMENT_ACTIVE] = sConfigMgr->GetOption<bool>("SetAllCreaturesWithWaypointMovementActive", false);
 
     // packet spoof punishment
-    _int_configs[CONFIG_PACKET_SPOOF_POLICY] = sConfigMgr->GetOption<int32>("PacketSpoof.Policy", (uint32)WorldSession::DosProtection::POLICY_KICK);
     _int_configs[CONFIG_PACKET_SPOOF_BANMODE] = sConfigMgr->GetOption<int32>("PacketSpoof.BanMode", (uint32)0);
     if (_int_configs[CONFIG_PACKET_SPOOF_BANMODE] > 1)
         _int_configs[CONFIG_PACKET_SPOOF_BANMODE] = (uint32)0;
@@ -1292,16 +1300,17 @@ void World::SetInitialWorldSettings()
     if (!sConfigMgr->isDryRun())
     {
         ///- Check the existence of the map files for all starting areas.
-        if (!MapMgr::ExistMapAndVMap(0, -6240.32f, 331.033f)
-                || !MapMgr::ExistMapAndVMap(0, -8949.95f, -132.493f)
-                || !MapMgr::ExistMapAndVMap(1, -618.518f, -4251.67f)
-                || !MapMgr::ExistMapAndVMap(0, 1676.35f, 1677.45f)
-                || !MapMgr::ExistMapAndVMap(1, 10311.3f, 832.463f)
-                || !MapMgr::ExistMapAndVMap(1, -2917.58f, -257.98f)
+        if (!MapMgr::ExistMapAndVMap(MAP_EASTERN_KINGDOMS, -6240.32f, 331.033f)
+                || !MapMgr::ExistMapAndVMap(MAP_EASTERN_KINGDOMS, -8949.95f, -132.493f)
+                || !MapMgr::ExistMapAndVMap(MAP_KALIMDOR, -618.518f, -4251.67f)
+                || !MapMgr::ExistMapAndVMap(MAP_EASTERN_KINGDOMS, 1676.35f, 1677.45f)
+                || !MapMgr::ExistMapAndVMap(MAP_KALIMDOR, 10311.3f, 832.463f)
+                || !MapMgr::ExistMapAndVMap(MAP_KALIMDOR, -2917.58f, -257.98f)
                 || (_int_configs[CONFIG_EXPANSION] && (
-                        !MapMgr::ExistMapAndVMap(530, 10349.6f, -6357.29f) ||
-                        !MapMgr::ExistMapAndVMap(530, -3961.64f, -13931.2f))))
+                        !MapMgr::ExistMapAndVMap(MAP_OUTLAND, 10349.6f, -6357.29f) ||
+                        !MapMgr::ExistMapAndVMap(MAP_OUTLAND, -3961.64f, -13931.2f))))
         {
+            LOG_ERROR("server.loading", "Failed to find map files for starting areas");
             exit(1);
         }
     }
@@ -1661,8 +1670,8 @@ void World::SetInitialWorldSettings()
     LOG_INFO("server.loading", "Loading Player Level Dependent Mail Rewards...");
     sObjectMgr->LoadMailLevelRewards();
 
-    LOG_INFO("server.loading", "Load Mail Server Template...");
-    sObjectMgr->LoadMailServerTemplates();
+    LOG_INFO("server.loading", "Load Mail Server definitions...");
+    sServerMailMgr->LoadMailServerTemplates();
 
     // Loot tables
     LoadLootTables();
@@ -1744,8 +1753,9 @@ void World::SetInitialWorldSettings()
     LOG_INFO("server.loading", "Loading Creature Formations...");
     sFormationMgr->LoadCreatureFormations();
 
-    LOG_INFO("server.loading", "Loading World States...");              // must be loaded before battleground, outdoor PvP and conditions
-    LoadWorldStates();
+    LOG_INFO("server.loading", "Loading WorldStates...");              // must be loaded before battleground, outdoor PvP and conditions
+    sWorldState->LoadWorldStates();
+    sWorldState->Load();
 
     LOG_INFO("server.loading", "Loading Conditions...");
     sConditionMgr->LoadConditions();
@@ -1887,9 +1897,6 @@ void World::SetInitialWorldSettings()
     LOG_INFO("server.loading", "Loading Active Arena Season...");
     sArenaSeasonMgr->LoadActiveSeason();
 
-    LOG_INFO("server.loading", "Loading WorldState...");
-    sWorldState->Load();
-
     sTicketMgr->Initialize();
 
     ///- Initialize Battlegrounds
@@ -1951,6 +1958,9 @@ void World::SetInitialWorldSettings()
 
     LOG_INFO("server.loading", "Load Channels...");
     ChannelMgr::LoadChannels();
+
+    LOG_INFO("server.loading", "Loading AntiDos opcode policies");
+    sWorldGlobals->LoadAntiDosOpcodePolicies();
 
     sScriptMgr->OnBeforeWorldInitialized();
 
@@ -2505,67 +2515,67 @@ void World::_UpdateRealmCharCount(PreparedQueryResult resultCharCount,uint32 acc
 
 void World::InitWeeklyQuestResetTime()
 {
-    Seconds wstime = Seconds(sWorld->getWorldState(WS_WEEKLY_QUEST_RESET_TIME));
+    Seconds wstime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_WEEKLY_QUEST_RESET_TIME));
     _nextWeeklyQuestReset = wstime > 0s ? wstime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(4, 6));
 
     if (wstime == 0s)
     {
-        sWorld->setWorldState(WS_WEEKLY_QUEST_RESET_TIME, _nextWeeklyQuestReset.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_WEEKLY_QUEST_RESET_TIME, _nextWeeklyQuestReset.count());
     }
 }
 
 void World::InitDailyQuestResetTime()
 {
-    Seconds wstime = Seconds(sWorld->getWorldState(WS_DAILY_QUEST_RESET_TIME));
+    Seconds wstime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_DAILY_QUEST_RESET_TIME));
     _nextDailyQuestReset = wstime > 0s ? wstime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
 
     if (wstime == 0s)
     {
-        sWorld->setWorldState(WS_DAILY_QUEST_RESET_TIME, _nextDailyQuestReset.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_DAILY_QUEST_RESET_TIME, _nextDailyQuestReset.count());
     }
 }
 
 void World::InitMonthlyQuestResetTime()
 {
-    Seconds wstime = Seconds(sWorld->getWorldState(WS_MONTHLY_QUEST_RESET_TIME));
+    Seconds wstime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_MONTHLY_QUEST_RESET_TIME));
     _nextMonthlyQuestReset = wstime > 0s ? wstime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
 
     if (wstime == 0s)
     {
-        sWorld->setWorldState(WS_MONTHLY_QUEST_RESET_TIME, _nextMonthlyQuestReset.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_MONTHLY_QUEST_RESET_TIME, _nextMonthlyQuestReset.count());
     }
 }
 
 void World::InitRandomBGResetTime()
 {
-    Seconds wstime = Seconds(sWorld->getWorldState(WS_BG_DAILY_RESET_TIME));
+    Seconds wstime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_BG_DAILY_RESET_TIME));
     _nextRandomBGReset = wstime > 0s ? wstime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
 
     if (wstime == 0s)
     {
-        sWorld->setWorldState(WS_BG_DAILY_RESET_TIME, _nextRandomBGReset.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_BG_DAILY_RESET_TIME, _nextRandomBGReset.count());
     }
 }
 
 void World::InitCalendarOldEventsDeletionTime()
 {
-    Seconds currentDeletionTime = Seconds(getWorldState(WS_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME));
+    Seconds currentDeletionTime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME));
     Seconds nextDeletionTime = currentDeletionTime > 0s ? currentDeletionTime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, getIntConfig(CONFIG_CALENDAR_DELETE_OLD_EVENTS_HOUR)));
 
     if (currentDeletionTime == 0s)
     {
-        sWorld->setWorldState(WS_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME, nextDeletionTime.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME, nextDeletionTime.count());
     }
 }
 
 void World::InitGuildResetTime()
 {
-    Seconds wstime = Seconds(getWorldState(WS_GUILD_DAILY_RESET_TIME));
+    Seconds wstime = Seconds(sWorldState->getWorldState(WORLD_STATE_CUSTOM_GUILD_DAILY_RESET_TIME));
     _nextGuildReset = wstime > 0s ? wstime : Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
 
     if (wstime == 0s)
     {
-        sWorld->setWorldState(WS_GUILD_DAILY_RESET_TIME, _nextGuildReset.count());
+        sWorldState->setWorldState(WORLD_STATE_CUSTOM_GUILD_DAILY_RESET_TIME, _nextGuildReset.count());
     }
 }
 
@@ -2580,7 +2590,7 @@ void World::ResetDailyQuests()
             itr->second->GetPlayer()->ResetDailyQuestStatus();
 
     _nextDailyQuestReset = Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
-    sWorld->setWorldState(WS_DAILY_QUEST_RESET_TIME, _nextDailyQuestReset.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_DAILY_QUEST_RESET_TIME, _nextDailyQuestReset.count());
 
     // change available dailies
     sPoolMgr->ChangeDailyQuests();
@@ -2616,7 +2626,7 @@ void World::ResetWeeklyQuests()
             itr->second->GetPlayer()->ResetWeeklyQuestStatus();
 
     _nextWeeklyQuestReset = Seconds(Acore::Time::GetNextTimeWithDayAndHour(4, 6));
-    sWorld->setWorldState(WS_WEEKLY_QUEST_RESET_TIME, _nextWeeklyQuestReset.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_WEEKLY_QUEST_RESET_TIME, _nextWeeklyQuestReset.count());
 
     // change available weeklies
     sPoolMgr->ChangeWeeklyQuests();
@@ -2635,7 +2645,7 @@ void World::ResetMonthlyQuests()
             itr->second->GetPlayer()->ResetMonthlyQuestStatus();
 
     _nextMonthlyQuestReset = Seconds(Acore::Time::GetNextTimeWithMonthAndHour(-1, 6));
-    sWorld->setWorldState(WS_MONTHLY_QUEST_RESET_TIME, _nextMonthlyQuestReset.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_MONTHLY_QUEST_RESET_TIME, _nextMonthlyQuestReset.count());
 }
 
 void World::ResetEventSeasonalQuests(uint16 event_id)
@@ -2663,7 +2673,7 @@ void World::ResetRandomBG()
             itr->second->GetPlayer()->SetRandomWinner(false);
 
     _nextRandomBGReset = Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
-    sWorld->setWorldState(WS_BG_DAILY_RESET_TIME, _nextRandomBGReset.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_BG_DAILY_RESET_TIME, _nextRandomBGReset.count());
 }
 
 void World::CalendarDeleteOldEvents()
@@ -2671,7 +2681,7 @@ void World::CalendarDeleteOldEvents()
     LOG_INFO("server.worldserver", "Calendar deletion of old events.");
 
     _nextCalendarOldEventsDeletionTime = Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, getIntConfig(CONFIG_CALENDAR_DELETE_OLD_EVENTS_HOUR)));
-    sWorld->setWorldState(WS_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME, _nextCalendarOldEventsDeletionTime.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_DAILY_CALENDAR_DELETION_OLD_EVENTS_TIME, _nextCalendarOldEventsDeletionTime.count());
     sCalendarMgr->DeleteOldEvents();
 }
 
@@ -2680,7 +2690,7 @@ void World::ResetGuildCap()
     LOG_INFO("server.worldserver", "Guild Daily Cap reset.");
 
     _nextGuildReset = Seconds(Acore::Time::GetNextTimeWithDayAndHour(-1, 6));
-    sWorld->setWorldState(WS_GUILD_DAILY_RESET_TIME, _nextGuildReset.count());
+    sWorldState->setWorldState(WORLD_STATE_CUSTOM_GUILD_DAILY_RESET_TIME, _nextGuildReset.count());
 
     sGuildMgr->ResetTimes();
 }
@@ -2711,57 +2721,6 @@ void World::UpdateAreaDependentAuras()
             itr->second->GetPlayer()->UpdateAreaDependentAuras(itr->second->GetPlayer()->GetAreaId());
             itr->second->GetPlayer()->UpdateZoneDependentAuras(itr->second->GetPlayer()->GetZoneId());
         }
-}
-
-void World::LoadWorldStates()
-{
-    uint32 oldMSTime = getMSTime();
-
-    QueryResult result = CharacterDatabase.Query("SELECT entry, value FROM worldstates");
-
-    if (!result)
-    {
-        LOG_WARN("server.loading", ">> Loaded 0 world states. DB table `worldstates` is empty!");
-        LOG_INFO("server.loading", " ");
-        return;
-    }
-
-    do
-    {
-        Field* fields = result->Fetch();
-        _worldstates[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
-    } while (result->NextRow());
-
-    LOG_INFO("server.loading", ">> Loaded {} World States in {} ms", _worldstates.size(), GetMSTimeDiffToNow(oldMSTime));
-    LOG_INFO("server.loading", " ");
-}
-
-// Setting a worldstate will save it to DB
-void World::setWorldState(uint32 index, uint64 timeValue)
-{
-    auto const& it = _worldstates.find(index);
-    if (it != _worldstates.end())
-    {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_WORLDSTATE);
-        stmt->SetData(0, uint32(timeValue));
-        stmt->SetData(1, index);
-        CharacterDatabase.Execute(stmt);
-    }
-    else
-    {
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_WORLDSTATE);
-        stmt->SetData(0, index);
-        stmt->SetData(1, uint32(timeValue));
-        CharacterDatabase.Execute(stmt);
-    }
-
-    _worldstates[index] = timeValue;
-}
-
-uint64 World::getWorldState(uint32 index) const
-{
-    auto const& itr = _worldstates.find(index);
-    return itr != _worldstates.end() ? itr->second : 0;
 }
 
 void World::ProcessQueryCallbacks()

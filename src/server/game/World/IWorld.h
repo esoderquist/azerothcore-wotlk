@@ -318,6 +318,11 @@ enum WorldIntConfigs
     CONFIG_BATTLEGROUND_SPEED_BUFF_RESPAWN,
     CONFIG_BATTLEGROUND_QUEUE_ANNOUNCER_LIMIT_MIN_LEVEL,
     CONFIG_BATTLEGROUND_QUEUE_ANNOUNCER_LIMIT_MIN_PLAYERS,
+    CONFIG_BATTLEGROUND_WARSONG_FLAGS,
+    CONFIG_BATTLEGROUND_ARATHI_CAPTUREPOINTS,
+    CONFIG_BATTLEGROUND_ALTERAC_REINFORCEMENTS,
+    CONFIG_BATTLEGROUND_ALTERAC_REP_ONBOSSDEATH,
+    CONFIG_BATTLEGROUND_EYEOFTHESTORM_CAPTUREPOINTS,
     CONFIG_WINTERGRASP_ENABLE,
     CONFIG_ARENA_MAX_RATING_DIFFERENCE,
     CONFIG_ARENA_RATING_DISCARD_TIMER,
@@ -366,7 +371,6 @@ enum WorldIntConfigs
     CONFIG_WINTERGRASP_BATTLETIME,
     CONFIG_WINTERGRASP_NOBATTLETIME,
     CONFIG_WINTERGRASP_RESTART_AFTER_CRASH,
-    CONFIG_PACKET_SPOOF_POLICY,
     CONFIG_PACKET_SPOOF_BANMODE,
     CONFIG_PACKET_SPOOF_BANDURATION,
     CONFIG_WARDEN_CLIENT_RESPONSE_DELAY,
@@ -560,9 +564,6 @@ public:
     [[nodiscard]] virtual float getFloatConfig(WorldFloatConfigs index) const = 0;
     virtual void setIntConfig(WorldIntConfigs index, uint32 value) = 0;
     [[nodiscard]] virtual uint32 getIntConfig(WorldIntConfigs index) const = 0;
-    virtual void setWorldState(uint32 index, uint64 value) = 0;
-    [[nodiscard]] virtual uint64 getWorldState(uint32 index) const = 0;
-    virtual void LoadWorldStates() = 0;
     [[nodiscard]] virtual bool IsPvPRealm() const = 0;
     [[nodiscard]] virtual bool IsFFAPvPRealm() const = 0;
     virtual uint32 GetNextWhoListUpdateDelaySecs() = 0;

@@ -102,10 +102,10 @@ void Map::InitVisibilityDistance()
 
     switch (GetId())
     {
-        case 609: // Scarlet Enclave (DK starting zone)
+        case MAP_EBON_HOLD: // Scarlet Enclave (DK starting zone)
             m_VisibleDistance = 125.0f;
             break;
-        case 25: // Scott Test (box map)
+        case MAP_SCOTT_TEST: // (box map)
             m_VisibleDistance = 200.0f;
             break;
     }
@@ -588,16 +588,20 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     if (t_diff)
         _dynamicTree.update(t_diff);
 
-    /// update worldsessions for existing players
+    // Update world sessions and players
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
     {
         Player* player = m_mapRefIter->GetSource();
         if (player && player->IsInWorld())
         {
-            //player->Update(t_diff);
+            // Update session
             WorldSession* session = player->GetSession();
             MapSessionFilter updater(session);
             session->Update(s_diff, updater);
+
+            // update players at tick
+            if (!t_diff)
+                player->Update(s_diff);
         }
     }
 
@@ -605,17 +609,6 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (!t_diff)
     {
-        for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
-        {
-            Player* player = m_mapRefIter->GetSource();
-
-            if (!player || !player->IsInWorld())
-                continue;
-
-            // update players at tick
-            player->Update(s_diff);
-        }
-
         HandleDelayedVisibility();
         return;
     }
@@ -624,36 +617,35 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     resetMarkedCells();
     resetMarkedCellsLarge();
 
+    // Prepare object updaters
     Acore::ObjectUpdater updater(t_diff, false);
 
-    // for creature
-    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer  > grid_object_update(updater);
-    // for pets
-    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer > world_object_update(updater);
+    // For creature
+    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer> grid_object_update(updater);
 
-    // for large creatures
+    // For pets
+    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer> world_object_update(updater);
+
+    // For large creatures
     Acore::ObjectUpdater largeObjectUpdater(t_diff, true);
-    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer  > grid_large_object_update(largeObjectUpdater);
-    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer  > world_large_object_update(largeObjectUpdater);
+    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer> grid_large_object_update(largeObjectUpdater);
+    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer> world_large_object_update(largeObjectUpdater);
 
     // pussywizard: container for far creatures in combat with players
     std::vector<Creature*> updateList;
     updateList.reserve(10);
 
-    // non-player active objects, increasing iterator in the loop in case of object removal
+    // Update non-player active objects
     for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end();)
     {
         WorldObject* obj = *m_activeNonPlayersIter;
         ++m_activeNonPlayersIter;
 
-        if (!obj || !obj->IsInWorld())
-            continue;
-
-        VisitNearbyCellsOf(obj, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
+        if (obj && obj->IsInWorld())
+            VisitNearbyCellsOf(obj, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
     }
 
-    // the player iterator is stored in the map object
-    // to make sure calls to Map::Remove don't invalidate it
+    // Update players and their associated objects
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
     {
         Player* player = m_mapRefIter->GetSource();
@@ -661,12 +653,10 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         if (!player || !player->IsInWorld())
             continue;
 
-        // update players at tick
         player->Update(s_diff);
-
         VisitNearbyCellsOfPlayer(player, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
 
-        // If player is using far sight, visit that object too
+        // If player is using far sight, update viewpoint
         if (WorldObject* viewPoint = player->GetViewpoint())
         {
             if (Creature* viewCreature = viewPoint->ToCreature())
@@ -684,7 +674,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         {
             updateList.clear();
             float rangeSq = player->GetGridActivationRange() - 1.0f;
-            rangeSq = rangeSq * rangeSq;
+            rangeSq *= rangeSq;
+
             HostileReference* ref = player->getHostileRefMgr().getFirst();
             while (ref)
             {
@@ -694,20 +685,20 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                             updateList.push_back(cre);
                 ref = ref->next();
             }
-            for (std::vector<Creature*>::const_iterator itr = updateList.begin(); itr != updateList.end(); ++itr)
-                VisitNearbyCellsOf(*itr, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
+
+            for (Creature* cre : updateList)
+                VisitNearbyCellsOf(cre, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
         }
     }
 
-    for (_transportsUpdateIter = _transports.begin(); _transportsUpdateIter != _transports.end();) // pussywizard: transports updated after VisitNearbyCellsOf, grids around are loaded, everything ok
+    // Update transports - pussywizard: transports updated after VisitNearbyCellsOf, grids around are loaded, everything ok
+    for (_transportsUpdateIter = _transports.begin(); _transportsUpdateIter != _transports.end();)
     {
         MotionTransport* transport = *_transportsUpdateIter;
         ++_transportsUpdateIter;
 
-        if (!transport->IsInWorld())
-            continue;
-
-        transport->Update(t_diff);
+        if (transport->IsInWorld())
+            transport->Update(t_diff);
     }
 
     SendObjectUpdates();
@@ -1379,7 +1370,7 @@ LiquidData const Map::GetLiquidData(uint32 phaseMask, float x, float y, float z,
         if (liquid_level > ground_level && G3D::fuzzyGe(z, ground_level - GROUND_HEIGHT_TOLERANCE))
         {
             // hardcoded in client like this
-            if (GetId() == 530 && liquid_type == 2)
+            if (GetId() == MAP_OUTLAND && liquid_type == 2)
                 liquid_type = 15;
 
             uint32 liquidFlagType = 0;
@@ -1435,7 +1426,7 @@ LiquidData const Map::GetLiquidData(uint32 phaseMask, float x, float y, float z,
             {
                 // hardcoded in client like this
                 uint32 liquidEntry = map_data.Entry;
-                if (GetId() == 530 && liquidEntry == 2)
+                if (GetId() == MAP_OUTLAND && liquidEntry == 2)
                     liquidEntry = 15;
 
                 liquidData = map_data;
@@ -1532,7 +1523,7 @@ void Map::GetFullTerrainStatusForPosition(uint32 /*phaseMask*/, float x, float y
     if (wmoData && wmoData->liquidInfo && wmoData->liquidInfo->level > wmoData->floorZ)
     {
         uint32 liquidType = wmoData->liquidInfo->type;
-        if (GetId() == 530 && liquidType == 2) // gotta love blizzard hacks
+        if (GetId() == MAP_OUTLAND && liquidType == 2) // gotta love blizzard hacks
             liquidType = 15;
 
         uint32 liquidFlagType = 0;
@@ -1581,7 +1572,7 @@ void Map::GetFullTerrainStatusForPosition(uint32 /*phaseMask*/, float x, float y
         if (gridLiquidData.Status != LIQUID_MAP_NO_WATER && (!wmoData || gridLiquidData.Level > wmoData->floorZ))
         {
             uint32 liquidEntry = gridLiquidData.Entry;
-            if (GetId() == 530 && liquidEntry == 2)
+            if (GetId() == MAP_OUTLAND && liquidEntry == 2)
                 liquidEntry = 15;
 
             data.liquidInfo = gridLiquidData;
@@ -1674,14 +1665,16 @@ bool Map::IsUnderWater(uint32 phaseMask, float x, float y, float z, float collis
 
 bool Map::HasEnoughWater(WorldObject const* searcher, float x, float y, float z) const
 {
-    LiquidData const& liquidData = const_cast<Map*>(this)->GetLiquidData(searcher->GetPhaseMask(), x, y, z, searcher->GetCollisionHeight(), MAP_ALL_LIQUIDS);
-    return (liquidData.Status & MAP_LIQUID_STATUS_SWIMMING) != 0 && HasEnoughWater(searcher, liquidData);
-}
+    LiquidData const& liquidData = const_cast<Map*>(this)->GetLiquidData(
+        searcher->GetPhaseMask(), x, y, z, searcher->GetCollisionHeight(), MAP_ALL_LIQUIDS);
 
-bool Map::HasEnoughWater(WorldObject const* searcher, LiquidData const& liquidData) const
-{
+    if ((liquidData.Status & MAP_LIQUID_STATUS_SWIMMING) == 0)
+        return false;
+
     float minHeightInWater = searcher->GetMinHeightInWater();
-    return liquidData.Level > INVALID_HEIGHT && liquidData.Level > liquidData.DepthLevel && liquidData.Level - liquidData.DepthLevel >= minHeightInWater;
+    return liquidData.Level > INVALID_HEIGHT &&
+           liquidData.Level > liquidData.DepthLevel &&
+           liquidData.Level - liquidData.DepthLevel >= minHeightInWater;
 }
 
 char const* Map::GetMapName() const
@@ -2205,15 +2198,6 @@ bool InstanceMap::AddPlayerToMap(Player* player)
     m_unloadTimer = 0;
     m_resetAfterUnload = false;
     m_unloadWhenEmpty = false;
-
-    if (instance_data && instance_data->IsTwoFactionInstance()
-        && instance_data->GetTeamIdInInstance() == TEAM_NEUTRAL)
-    {
-        instance_data->SetTeamIdInInstance(player->GetTeamId());
-        if (Group* group = player->GetGroup())
-            if (Player* leader = ObjectAccessor::FindConnectedPlayer(group->GetLeaderGUID()))
-                instance_data->SetTeamIdInInstance(leader->GetTeamId());
-    }
 
     // this will acquire the same mutex so it cannot be in the previous block
     Map::AddPlayerToMap(player);
@@ -2844,7 +2828,7 @@ Corpse* Map::ConvertCorpseToBones(ObjectGuid const ownerGuid, bool insignia /*= 
     // ignore bones creating option in case insignia
     if ((insignia ||
         (IsBattlegroundOrArena() ? sWorld->getBoolConfig(CONFIG_DEATH_BONES_BG_OR_ARENA) : sWorld->getBoolConfig(CONFIG_DEATH_BONES_WORLD))) &&
-        !IsGridCreated(corpse->GetPositionX(), corpse->GetPositionY()))
+        IsGridLoaded(corpse->GetPositionX(), corpse->GetPositionY()))
     {
         // Create bones, don't change Corpse
         bones = new Corpse();
