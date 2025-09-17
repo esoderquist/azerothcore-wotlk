@@ -1001,20 +1001,25 @@ class spell_chapter2_persuasive_strike : public SpellScript
             creature->AI()->Talk(SAY_PERSUADED3, 24s);
             creature->AI()->Talk(SAY_PERSUADED4, 32s);
 
-            creature->m_Events.AddEventAtOffset([creature, player]
+            ObjectGuid playerGuid = player->GetGUID();
+
+            creature->m_Events.AddEventAtOffset([creature, playerGuid]
             {
-                if (player)
-                    sCreatureTextMgr->SendChat(creature, SAY_PERSUADED5, nullptr, CHAT_MSG_ADDON, LANG_ADDON, TEXT_RANGE_NORMAL, 0, TEAM_NEUTRAL, false, player);
+                if (Player* caster = ObjectAccessor::GetPlayer(*creature, playerGuid))
+                    sCreatureTextMgr->SendChat(creature, SAY_PERSUADED5, nullptr, CHAT_MSG_ADDON, LANG_ADDON, TEXT_RANGE_NORMAL, 0, TEAM_NEUTRAL, false, caster);
             }, 40s);
 
-            creature->m_Events.AddEventAtOffset([creature, player]
+            creature->m_Events.AddEventAtOffset([creature, playerGuid]
             {
                 creature->AI()->Talk(SAY_PERSUADED6);
-                if (player)
+
+                if (Player* caster = ObjectAccessor::GetPlayer(*creature, playerGuid))
                 {
-                    Unit::Kill(player, creature);
-                    player->GroupEventHappens(QUEST_HOW_TO_WIN_FRIENDS, creature);
+                    Unit::Kill(caster, creature);
+                    caster->GroupEventHappens(QUEST_HOW_TO_WIN_FRIENDS, creature);
                 }
+                else
+                    creature->KillSelf();
             }, 48s);
         }
         else
@@ -1027,6 +1032,44 @@ class spell_chapter2_persuasive_strike : public SpellScript
     }
 };
 
+enum AcherusPortal
+{
+    SPELL_PORTAL_EFFECT_ACHERUS   = 53098,
+    QUEST_SCARLET_ARMIES_APPROACH = 12757
+};
+
+class spell_portal_effect_acherus : public SpellScript
+{
+    PrepareSpellScript(spell_portal_effect_acherus);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_PORTAL_EFFECT_ACHERUS });
+    }
+
+    SpellCastResult CheckCast()
+    {
+        Unit* target = GetExplTargetUnit();
+        if (target && target->IsPlayer() && target->ToPlayer()->HasQuest(QUEST_SCARLET_ARMIES_APPROACH))
+            return SPELL_CAST_OK;
+
+        return SPELL_FAILED_DONT_REPORT;
+    }
+
+    void HandleScriptEffect(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* caster = GetCaster())
+            if (Player* player = GetHitPlayer())
+                caster->CastSpell(player, GetEffectValue(), true);
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_portal_effect_acherus::CheckCast);
+        OnEffectHitTarget += SpellEffectFn(spell_portal_effect_acherus::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
 void AddSC_the_scarlet_enclave_c2()
 {
     new npc_scarlet_courier();
@@ -1035,4 +1078,5 @@ void AddSC_the_scarlet_enclave_c2()
     new npc_acherus_necromancer();
     new npc_gothik_the_harvester();
     RegisterSpellScript(spell_chapter2_persuasive_strike);
+    RegisterSpellScript(spell_portal_effect_acherus);
 }
