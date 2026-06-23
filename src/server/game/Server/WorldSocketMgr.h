@@ -42,7 +42,7 @@ public:
     /// Stops all network threads, It will wait for all running threads .
     void StopNetwork() override;
 
-    void OnSocketOpen(tcp::socket&& sock, uint32 threadIndex) override;
+    void OnSocketOpen(IoContextTcpSocket&& sock, uint32 threadIndex) override;
 
     int32 NumSocketsConnected = 0;
 
@@ -59,9 +59,9 @@ protected:
 
     NetworkThread<WorldSocket>* CreateThreads() const override;
 
-    static void OnSocketAccept(tcp::socket&& sock, uint32 threadIndex)
+    static void OnSocketAccept(IoContextTcpSocket&& sock, uint32 threadIndex)
     {
-        Instance().OnSocketOpen(std::forward<tcp::socket>(sock), threadIndex);
+        Instance().OnSocketOpen(std::move(sock), threadIndex);
     }
 
 private:

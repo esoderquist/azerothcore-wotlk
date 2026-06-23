@@ -57,6 +57,7 @@ struct AuctionEntry;
 struct DeclinedName;
 struct ItemTemplate;
 struct MovementInfo;
+struct TradeStatusInfo;
 
 namespace lfg
 {
@@ -191,6 +192,16 @@ namespace WorldPackets
         class ItemRefund;
     }
 
+    namespace Quest
+    {
+        class QuestPushResultClient;
+        class QuestGiverQuestAutoLaunch;
+        class QuestLogSwapQuest;
+        class QuestLogRemoveQuest;
+        class QuestConfirmAcceptClient;
+        class PushQuestToParty;
+    }
+
     namespace Calendar
     {
         class GetEvent;
@@ -203,6 +214,14 @@ namespace WorldPackets
     {
         class Hello;
         class TrainerBuySpell;
+    }
+
+    namespace Instance
+    {
+        class SetDungeonDifficultyClient;
+        class SetRaidDifficultyClient;
+        class ResetInstances;
+        class InstanceLockResponse;
     }
 }
 
@@ -383,6 +402,11 @@ public:
     void ValidateAccountFlags();
 
     bool IsGMAccount() const;
+    bool IsTrialAccount() const;
+    bool IsInternetGameRoomAccount() const;
+    bool IsRecurringBillingAccount() const;
+
+    uint8 GetBillingPlanFlags() const;
 
     bool PlayerLoading() const { return m_playerLoading; }
     bool PlayerLogout() const { return m_playerLogout; }
@@ -426,6 +450,16 @@ public:
 
     AccountTypes GetSecurity() const { return _security; }
     bool CanSkipQueue() const { return _skipQueue; }
+
+    // RBAC
+    rbac::RBACData* GetRBACData() const { return _RBACData; }
+    bool HasPermission(uint32 permissionId);
+    void LoadPermissions();
+    QueryCallback LoadPermissionsAsync();
+    void InvalidateRBACData();
+
+    /// For unit testing - initializes RBAC data without database access
+    void InitRBACDataForTest();
     uint32 GetAccountId() const { return _accountId; }
     Player* GetPlayer() const { return _player; }
     std::string const& GetPlayerName() const;
@@ -497,7 +531,7 @@ public:
 
     void SendBattleGroundList(ObjectGuid guid, BattlegroundTypeId bgTypeId = BATTLEGROUND_RB);
 
-    void SendTradeStatus(TradeStatus status);
+    void SendTradeStatus(TradeStatusInfo const& info);
     void SendUpdateTrade(bool trader_data = true);
     void SendCancelTrade(TradeStatus status);
 
@@ -891,13 +925,13 @@ public:                                                 // opcodes handlers
     void HandleQuestgiverRequestRewardOpcode(WorldPacket& recvPacket);
     void HandleQuestQueryOpcode(WorldPacket& recvPacket);
     void HandleQuestgiverCancel(WorldPacket& recvData);
-    void HandleQuestLogSwapQuest(WorldPacket& recvData);
-    void HandleQuestLogRemoveQuest(WorldPacket& recvData);
-    void HandleQuestConfirmAccept(WorldPacket& recvData);
+    void HandleQuestLogSwapQuest(WorldPackets::Quest::QuestLogSwapQuest& packet);
+    void HandleQuestLogRemoveQuest(WorldPackets::Quest::QuestLogRemoveQuest& packet);
+    void HandleQuestConfirmAccept(WorldPackets::Quest::QuestConfirmAcceptClient& packet);
     void HandleQuestgiverCompleteQuest(WorldPacket& recvData);
-    void HandleQuestgiverQuestAutoLaunch(WorldPacket& recvPacket);
-    void HandlePushQuestToParty(WorldPacket& recvPacket);
-    void HandleQuestPushResult(WorldPacket& recvPacket);
+    void HandleQuestgiverQuestAutoLaunch(WorldPackets::Quest::QuestGiverQuestAutoLaunch& packet);
+    void HandlePushQuestToParty(WorldPackets::Quest::PushQuestToParty& packet);
+    void HandleQuestPushResult(WorldPackets::Quest::QuestPushResultClient& packet);
 
     void HandleMessagechatOpcode(WorldPacket& recvPacket);
     void SendPlayerNotFoundNotice(std::string const& name);
@@ -983,16 +1017,16 @@ public:                                                 // opcodes handlers
     void HandleMinimapPingOpcode(WorldPackets::Misc::MinimapPingClient& packet);
     void HandleRandomRollOpcode(WorldPackets::Misc::RandomRollClient& packet);
     void HandleFarSightOpcode(WorldPacket& recvData);
-    void HandleSetDungeonDifficultyOpcode(WorldPacket& recvData);
-    void HandleSetRaidDifficultyOpcode(WorldPacket& recvData);
+    void HandleSetDungeonDifficultyOpcode(WorldPackets::Instance::SetDungeonDifficultyClient& packet);
+    void HandleSetRaidDifficultyOpcode(WorldPackets::Instance::SetRaidDifficultyClient& packet);
     void HandleMoveFlagChangeOpcode(WorldPacket& recvData);
     void HandleSetTitleOpcode(WorldPacket& recvData);
     void HandleRealmSplitOpcode(WorldPacket& recvData);
     void HandleTimeSyncResp(WorldPacket& recvData);
     void HandleWhoisOpcode(WorldPacket& recvData);
-    void HandleResetInstancesOpcode(WorldPacket& recvData);
+    void HandleResetInstancesOpcode(WorldPackets::Instance::ResetInstances& packet);
     void HandleHearthAndResurrect(WorldPacket& recvData);
-    void HandleInstanceLockResponse(WorldPacket& recvPacket);
+    void HandleInstanceLockResponse(WorldPackets::Instance::InstanceLockResponse& packet);
     void HandleUpdateMissileTrajectory(WorldPacket& recvPacket);
 
     // Battlefield
@@ -1124,7 +1158,6 @@ public:                                                 // opcodes handlers
     void HandleEnterPlayerVehicle(WorldPacket& data);
     void HandleUpdateProjectilePosition(WorldPacket& recvPacket);
 
-    void HandleTeleportTimeout(bool updateInSessions);
     bool HandleSocketClosed();
     void SetOfflineTime(uint32 time) { _offlineTime = time; }
     uint32 GetOfflineTime() const { return _offlineTime; }
@@ -1211,6 +1244,7 @@ private:
     AccountTypes _security;
     bool _skipQueue;
     uint32 _accountId;
+    rbac::RBACData* _RBACData;
     std::string _accountName;
     uint32 _accountFlags;
     uint8 m_expansion;
